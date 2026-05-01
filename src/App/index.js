@@ -22,9 +22,13 @@ import { GUI } from "three/addons/libs/lil-gui.module.min.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import Stats from "stats.js";
 import resources from "./Resources";
+
+const MAX_DPR = 2;
 
 export default class App {
   #renderer;
@@ -42,6 +46,7 @@ export default class App {
   #composer;
   #renderPass;
   #bloomPass;
+  #fxaaPass;
   #outputPass;
   #guiState;
   #rafId;
@@ -66,6 +71,7 @@ export default class App {
     this.#composer = null;
     this.#renderPass = null;
     this.#bloomPass = null;
+    this.#fxaaPass = null;
     this.#outputPass = null;
     this.#guiState = {
       rotateScene: false,
@@ -74,6 +80,7 @@ export default class App {
       showLightHelpers: false,
       showShadowHelpers: false,
       bloomEnabled: true,
+      fxaaEnabled: true,
       bloomStrength: 0.04,
       bloomRadius: 0.26,
       bloomThreshold: 1,
@@ -99,6 +106,7 @@ export default class App {
 
     this.#renderer = new WebGLRenderer({
       canvas,
+      antialias: false,
     });
 
     this.#renderer.shadowMap.enabled = true;
@@ -106,6 +114,7 @@ export default class App {
     this.#renderer.toneMapping = ACESFilmicToneMapping;
     this.#renderer.toneMappingExposure = this.#guiState.toneMappingExposure;
 
+    this.#renderer.setPixelRatio(this.#getPixelRatio());
     this.#renderer.setSize(window.innerWidth, window.innerHeight);
 
     this.#clock = new Clock();
@@ -383,6 +392,7 @@ export default class App {
     const size = new Vector2(window.innerWidth, window.innerHeight);
 
     this.#composer = new EffectComposer(this.#renderer);
+    this.#composer.setPixelRatio(this.#getPixelRatio());
     this.#composer.setSize(size.x, size.y);
 
     this.#renderPass = new RenderPass(this.#scene, this.#camera);
@@ -397,8 +407,32 @@ export default class App {
     this.#bloomPass.enabled = this.#guiState.bloomEnabled;
     this.#composer.addPass(this.#bloomPass);
 
+    this.#fxaaPass = new ShaderPass(FXAAShader);
+    this.#fxaaPass.enabled = this.#guiState.fxaaEnabled;
+    this.#composer.addPass(this.#fxaaPass);
+    this.#updateFxaaResolution(size.x, size.y, this.#getPixelRatio());
+
     this.#outputPass = new OutputPass();
     this.#composer.addPass(this.#outputPass);
+  }
+
+  #updateFxaaResolution(width, height, dpr) {
+    if (!this.#fxaaPass) {
+      return;
+    }
+
+    const resolution = this.#fxaaPass.material?.uniforms?.resolution?.value;
+    if (!resolution) {
+      return;
+    }
+
+    const safeWidth = Math.max(1, width * dpr);
+    const safeHeight = Math.max(1, height * dpr);
+    resolution.set(1 / safeWidth, 1 / safeHeight);
+  }
+
+  #getPixelRatio() {
+    return Math.min(window.devicePixelRatio || 1, MAX_DPR);
   }
 
   #resize = () => {
@@ -408,9 +442,13 @@ export default class App {
 
     const w = window.innerWidth;
     const h = window.innerHeight;
+    const dpr = this.#getPixelRatio();
 
+    this.#renderer.setPixelRatio(dpr);
     this.#renderer.setSize(w, h);
+    this.#composer?.setPixelRatio(dpr);
     this.#composer?.setSize(w, h);
+    this.#updateFxaaResolution(w, h, dpr);
     const aspect = w / h;
 
     this.#camera.aspect = aspect;
@@ -476,6 +514,14 @@ export default class App {
       .onChange((value) => {
         if (this.#bloomPass) {
           this.#bloomPass.enabled = value;
+        }
+      });
+    postFolder
+      .add(this.#guiState, "fxaaEnabled")
+      .name("FXAA enabled")
+      .onChange((value) => {
+        if (this.#fxaaPass) {
+          this.#fxaaPass.enabled = value;
         }
       });
     postFolder
@@ -613,6 +659,7 @@ export default class App {
     this.#removeGUI();
     this.#controls?.dispose();
     this.#bloomPass?.dispose?.();
+    this.#fxaaPass?.dispose?.();
     this.#outputPass?.dispose?.();
     this.#composer?.dispose?.();
 
@@ -652,6 +699,7 @@ export default class App {
     this.#composer = null;
     this.#renderPass = null;
     this.#bloomPass = null;
+    this.#fxaaPass = null;
     this.#outputPass = null;
     this.#renderer = null;
     this.#stats = null;
