@@ -22,8 +22,13 @@ export default class App {
   #mesh;
   #clock;
   #controls;
+  #rafId;
+  #isDestroyed;
 
   constructor() {
+    this.#rafId = 0;
+    this.#isDestroyed = false;
+
     this.#init().catch((error) => {
       // Keep errors visible during bootstrap without crashing silently.
       console.error(error);
@@ -36,8 +41,13 @@ export default class App {
 
     document.body.appendChild(this.#stats.dom);
 
+    const canvas = document.querySelector('#canvas');
+    if (!canvas) {
+      throw new Error('Canvas element #canvas was not found');
+    }
+
     this.#renderer = new WebGLRenderer({
-      canvas: document.querySelector('#canvas'),
+      canvas,
     });
 
     this.#renderer.shadowMap.enabled = true;
@@ -66,7 +76,7 @@ export default class App {
   async #load() {
     // await resources.load();
 
-    // WHATEVER
+    // MESHES
     this.#initMesh();
 
     // LIGHTS
@@ -80,7 +90,7 @@ export default class App {
   }
 
   #initMesh() {
-    this.#initTorusKnow();
+    this.#initTorusKnot();
 
     const geo = new PlaneGeometry(35, 35);
     const material = new MeshStandardMaterial({
@@ -93,7 +103,7 @@ export default class App {
     this.#scene.add(mesh);
   }
 
-  #initTorusKnow() {
+  #initTorusKnot() {
     const geo = new TorusKnotGeometry(10, 3, 100, 16);
 
     const material = new MeshStandardMaterial({
@@ -106,6 +116,10 @@ export default class App {
   }
 
   #resize = () => {
+    if (this.#isDestroyed) {
+      return;
+    }
+
     const w = window.innerWidth;
     const h = window.innerHeight;
 
@@ -120,7 +134,15 @@ export default class App {
     window.addEventListener('resize', this.#resize);
   }
 
+  #removeEvents() {
+    window.removeEventListener('resize', this.#resize);
+  }
+
   #animate = () => {
+    if (this.#isDestroyed) {
+      return;
+    }
+
     this.#stats.begin();
 
     const delta = this.#clock.getDelta();
@@ -129,6 +151,52 @@ export default class App {
     this.#renderer.render(this.#scene, this.#camera);
     this.#stats.end();
 
-    window.requestAnimationFrame(this.#animate);
+    this.#rafId = window.requestAnimationFrame(this.#animate);
   };
+
+  destroy() {
+    if (this.#isDestroyed) {
+      return;
+    }
+    this.#isDestroyed = true;
+
+    if (this.#rafId) {
+      window.cancelAnimationFrame(this.#rafId);
+      this.#rafId = 0;
+    }
+
+    this.#removeEvents();
+    this.#controls?.dispose();
+
+    if (this.#scene) {
+      this.#scene.traverse((object) => {
+        if (!(object instanceof Mesh)) {
+          return;
+        }
+
+        object.geometry?.dispose();
+        const { material } = object;
+        if (Array.isArray(material)) {
+          material.forEach((m) => m?.dispose?.());
+          return;
+        }
+        material?.dispose?.();
+      });
+      this.#scene.clear();
+    }
+
+    this.#renderer?.dispose();
+
+    if (this.#stats?.dom?.parentNode) {
+      this.#stats.dom.parentNode.removeChild(this.#stats.dom);
+    }
+
+    this.#mesh = null;
+    this.#controls = null;
+    this.#clock = null;
+    this.#scene = null;
+    this.#camera = null;
+    this.#renderer = null;
+    this.#stats = null;
+  }
 }
