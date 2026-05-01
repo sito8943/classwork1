@@ -112,11 +112,25 @@ export default class App {
   async #load() {
     await resources.load();
 
+    // ENVIRONMENT
+    this.#applyEnvironment();
+
     // MESHES
     this.#initMesh();
 
     // LIGHTS
     this.#initLights();
+  }
+
+  #applyEnvironment() {
+    const envMap = resources.get("envmap");
+    if (!envMap) {
+      throw new Error("HDR environment map was not loaded");
+    }
+
+    this.#scene.environment = envMap;
+    // Decrease environment intensity to make shadows more visible
+    this.#scene.environmentIntensity = 0.45;
   }
 
   #initLights() {
