@@ -1,7 +1,9 @@
 import {
   AmbientLight,
+  CameraHelper,
   Clock,
   DirectionalLight,
+  DirectionalLightHelper,
   DoubleSide,
   Mesh,
   MeshStandardMaterial,
@@ -13,6 +15,7 @@ import {
   PCFShadowMap,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 import Stats from 'stats.js';
 
 export default class App {
@@ -21,8 +24,14 @@ export default class App {
   #scene;
   #stats;
   #mesh;
+  #ambientLight;
+  #directionalLights;
   #clock;
   #controls;
+  #gui;
+  #lightHelpers;
+  #shadowHelpers;
+  #guiState;
   #rafId;
   #isDestroyed;
   #isSceneRotationEnabled;
@@ -33,6 +42,17 @@ export default class App {
     this.#isDestroyed = false;
     this.#isSceneRotationEnabled = false;
     this.#rotateSceneButton = null;
+    this.#ambientLight = null;
+    this.#directionalLights = [];
+    this.#gui = null;
+    this.#lightHelpers = [];
+    this.#shadowHelpers = [];
+    this.#guiState = {
+      rotateScene: false,
+      rotateSpeed: 0.8,
+      showLightHelpers: false,
+      showShadowHelpers: false,
+    };
 
     this.#init().catch((error) => {
       // Keep errors visible during bootstrap without crashing silently.
@@ -68,12 +88,13 @@ export default class App {
     this.#camera.position.z = 20;
 
     this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
-    this.#controls.enableDamping = true;
+    this.#controls.enableDamping = false;
 
     this.#scene = new Scene();
 
     await this.#load();
     this.#initUI();
+    this.#initGUI();
 
     this.#animate();
     this.#initEvents();
@@ -91,29 +112,32 @@ export default class App {
 
   #initLights() {
     const al = new AmbientLight('white', 0.2);
+    this.#ambientLight = al;
     this.#scene.add(al);
 
-    this.#createDirectionalLight({
+    const key = this.#createDirectionalLight({
       color: '#ffe7c2',
       intensity: 2.1,
       position: [24, 33, 18],
       shadowSize: 2048,
       shadowBias: -0.00015,
     });
-    this.#createDirectionalLight({
+    const fill = this.#createDirectionalLight({
       color: '#c9dcff',
       intensity: 0.95,
       position: [-26, 33, 10],
       shadowSize: 1024,
       shadowBias: -0.0001,
     });
-    this.#createDirectionalLight({
+    const rim = this.#createDirectionalLight({
       color: '#ffffff',
       intensity: 0.8,
       position: [0, 33, -28],
       shadowSize: 1024,
       shadowBias: -0.0001,
     });
+
+    this.#directionalLights = [key, fill, rim];
   }
 
   #createDirectionalLight({
@@ -139,6 +163,51 @@ export default class App {
     this.#scene.add(light);
     this.#scene.add(light.target);
     light.target.position.set(...target);
+
+    return light;
+  }
+
+  #setLightHelpersVisible(visible) {
+    if (visible) {
+      if (this.#lightHelpers.length === 0) {
+        this.#directionalLights.forEach((light) => {
+          const helper = new DirectionalLightHelper(light, 5);
+          this.#scene.add(helper);
+          this.#lightHelpers.push(helper);
+        });
+      }
+      return;
+    }
+
+    this.#lightHelpers.forEach((helper) => {
+      helper.dispose();
+      this.#scene.remove(helper);
+    });
+    this.#lightHelpers = [];
+  }
+
+  #setShadowHelpersVisible(visible) {
+    if (visible) {
+      if (this.#shadowHelpers.length === 0) {
+        this.#directionalLights.forEach((light) => {
+          const helper = new CameraHelper(light.shadow.camera);
+          this.#scene.add(helper);
+          this.#shadowHelpers.push(helper);
+        });
+      }
+      return;
+    }
+
+    this.#shadowHelpers.forEach((helper) => {
+      helper.dispose();
+      this.#scene.remove(helper);
+    });
+    this.#shadowHelpers = [];
+  }
+
+  #updateHelpers() {
+    this.#lightHelpers.forEach((helper) => helper.update());
+    this.#shadowHelpers.forEach((helper) => helper.update());
   }
 
   #initMesh() {
@@ -193,6 +262,54 @@ export default class App {
     window.removeEventListener('resize', this.#resize);
   }
 
+  #initGUI() {
+    this.#gui = new GUI({
+      title: 'Scene Controls',
+      width: 320,
+    });
+
+    const sceneFolder = this.#gui.addFolder('Scene');
+    sceneFolder
+      .add(this.#guiState, 'rotateScene')
+      .name('Rotate scene')
+      .listen()
+      .onChange((value) => {
+        this.#isSceneRotationEnabled = value;
+        this.#syncRotateButton();
+      });
+    sceneFolder
+      .add(this.#guiState, 'rotateSpeed', 0.1, 2, 0.05)
+      .name('Rotate speed');
+
+    const ambientFolder = this.#gui.addFolder('Ambient');
+    ambientFolder
+      .add(this.#ambientLight, 'intensity', 0, 2, 0.01)
+      .name('Intensity');
+
+    const helpersFolder = this.#gui.addFolder('Helpers');
+    helpersFolder
+      .add(this.#guiState, 'showLightHelpers')
+      .name('Directional helper')
+      .onChange((value) => {
+        this.#setLightHelpersVisible(value);
+      });
+    helpersFolder
+      .add(this.#guiState, 'showShadowHelpers')
+      .name('Shadow camera helper')
+      .onChange((value) => {
+        this.#setShadowHelpersVisible(value);
+      });
+  }
+
+  #removeGUI() {
+    if (!this.#gui) {
+      return;
+    }
+
+    this.#gui.destroy();
+    this.#gui = null;
+  }
+
   #initUI() {
     const button = document.createElement('button');
     button.type = 'button';
@@ -232,6 +349,8 @@ export default class App {
   };
 
   #syncRotateButton() {
+    this.#guiState.rotateScene = this.#isSceneRotationEnabled;
+
     if (!this.#rotateSceneButton) {
       return;
     }
@@ -255,8 +374,9 @@ export default class App {
     const delta = this.#clock.getDelta();
     this.#controls.update(delta);
     if (this.#isSceneRotationEnabled) {
-      this.#scene.rotation.y += delta * 0.8;
+      this.#scene.rotation.y += delta * this.#guiState.rotateSpeed;
     }
+    this.#updateHelpers();
 
     this.#renderer.render(this.#scene, this.#camera);
     this.#stats.end();
@@ -277,6 +397,9 @@ export default class App {
 
     this.#removeEvents();
     this.#removeUI();
+    this.#setLightHelpersVisible(false);
+    this.#setShadowHelpersVisible(false);
+    this.#removeGUI();
     this.#controls?.dispose();
 
     if (this.#scene) {
@@ -306,6 +429,8 @@ export default class App {
     this.#controls = null;
     this.#clock = null;
     this.#isSceneRotationEnabled = false;
+    this.#ambientLight = null;
+    this.#directionalLights = [];
     this.#scene = null;
     this.#camera = null;
     this.#renderer = null;
