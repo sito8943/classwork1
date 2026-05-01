@@ -69,6 +69,7 @@ export default class App {
     this.#outputPass = null;
     this.#guiState = {
       rotateScene: false,
+      lightsEnabled: true,
       rotateSpeed: 0.8,
       showLightHelpers: false,
       showShadowHelpers: false,
@@ -286,6 +287,7 @@ export default class App {
       }
       this.#renderer.shadowMap.needsUpdate = true;
       this.#areLightsEnabled = false;
+      this.#guiState.lightsEnabled = false;
       return;
     }
 
@@ -304,12 +306,17 @@ export default class App {
     }
     this.#renderer.shadowMap.needsUpdate = true;
     this.#areLightsEnabled = true;
+    this.#guiState.lightsEnabled = true;
+  }
+
+  #setSceneRotationEnabled(enabled) {
+    this.#isSceneRotationEnabled = enabled;
+    this.#syncRotateButton();
   }
 
   #setPresentationActive(active) {
-    this.#isSceneRotationEnabled = active;
+    this.#setSceneRotationEnabled(active);
     this.#setLightsEnabled(active);
-    this.#syncRotateButton();
   }
 
   #initMesh() {
@@ -430,7 +437,14 @@ export default class App {
       .name("Rotate scene")
       .listen()
       .onChange((value) => {
-        this.#setPresentationActive(value);
+        this.#setSceneRotationEnabled(value);
+      });
+    sceneFolder
+      .add(this.#guiState, "lightsEnabled")
+      .name("Lights enabled")
+      .listen()
+      .onChange((value) => {
+        this.#setLightsEnabled(value);
       });
     sceneFolder
       .add(this.#guiState, "rotateSpeed", 0.1, 2, 0.05)
