@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  Box3,
   CameraHelper,
   Clock,
   DirectionalLight,
@@ -10,13 +11,14 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
-  TorusKnotGeometry,
+  Vector3,
   WebGLRenderer,
   PCFShadowMap,
-} from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
-import Stats from 'stats.js';
+} from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+import Stats from "stats.js";
+import resources from "./Resources";
 
 export default class App {
   #renderer;
@@ -35,12 +37,16 @@ export default class App {
   #rafId;
   #isDestroyed;
   #isSceneRotationEnabled;
+  #areLightsEnabled;
+  #lightSnapshot;
   #rotateSceneButton;
 
   constructor() {
     this.#rafId = 0;
     this.#isDestroyed = false;
     this.#isSceneRotationEnabled = false;
+    this.#areLightsEnabled = true;
+    this.#lightSnapshot = null;
     this.#rotateSceneButton = null;
     this.#ambientLight = null;
     this.#directionalLights = [];
@@ -66,9 +72,9 @@ export default class App {
 
     document.body.appendChild(this.#stats.dom);
 
-    const canvas = document.querySelector('#canvas');
+    const canvas = document.querySelector("#canvas");
     if (!canvas) {
-      throw new Error('Canvas element #canvas was not found');
+      throw new Error("Canvas element #canvas was not found");
     }
 
     this.#renderer = new WebGLRenderer({
@@ -86,6 +92,8 @@ export default class App {
 
     this.#camera = new PerspectiveCamera(60, aspect, 0.1, 100);
     this.#camera.position.z = 20;
+    this.#camera.position.y = 20;
+    this.#camera.position.x= 20;
 
     this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
     this.#controls.enableDamping = false;
@@ -101,7 +109,7 @@ export default class App {
   }
 
   async #load() {
-    // await resources.load();
+    await resources.load();
 
     // MESHES
     this.#initMesh();
@@ -111,26 +119,26 @@ export default class App {
   }
 
   #initLights() {
-    const al = new AmbientLight('white', 0.2);
+    const al = new AmbientLight("white", 0.2);
     this.#ambientLight = al;
     this.#scene.add(al);
 
     const key = this.#createDirectionalLight({
-      color: '#ffe7c2',
+      color: "#ffe7c2",
       intensity: 2.1,
       position: [24, 33, 18],
       shadowSize: 2048,
       shadowBias: -0.00015,
     });
     const fill = this.#createDirectionalLight({
-      color: '#c9dcff',
+      color: "#c9dcff",
       intensity: 0.95,
       position: [-26, 33, 10],
       shadowSize: 1024,
       shadowBias: -0.0001,
     });
     const rim = this.#createDirectionalLight({
-      color: '#ffffff',
+      color: "#ffffff",
       intensity: 0.8,
       position: [0, 33, -28],
       shadowSize: 1024,
@@ -138,6 +146,7 @@ export default class App {
     });
 
     this.#directionalLights = [key, fill, rim];
+    this.#saveCurrentLightState();
   }
 
   #createDirectionalLight({
@@ -210,8 +219,48 @@ export default class App {
     this.#shadowHelpers.forEach((helper) => helper.update());
   }
 
+  #saveCurrentLightState() {
+    this.#lightSnapshot = {
+      directional: this.#directionalLights.map((light) => light.intensity),
+    };
+  }
+
+  #setLightsEnabled(enabled) {
+    if (this.#directionalLights.length === 0) {
+      return;
+    }
+
+    if (enabled === this.#areLightsEnabled) {
+      return;
+    }
+
+    if (!enabled) {
+      this.#saveCurrentLightState();
+      this.#directionalLights.forEach((light) => {
+        light.intensity *= 0.2;
+      });
+      this.#areLightsEnabled = false;
+      return;
+    }
+
+    const directionalIntensities = this.#lightSnapshot?.directional ?? [];
+
+    this.#directionalLights.forEach((light, index) => {
+      const intensity = directionalIntensities[index];
+      light.intensity =
+        typeof intensity === "number" ? intensity : light.intensity;
+    });
+    this.#areLightsEnabled = true;
+  }
+
+  #setPresentationActive(active) {
+    this.#isSceneRotationEnabled = active;
+    this.#setLightsEnabled(active);
+    this.#syncRotateButton();
+  }
+
   #initMesh() {
-    this.#initTorusKnot();
+    const model = this.#initTVModel();
 
     const geo = new PlaneGeometry(35, 35);
     const material = new MeshStandardMaterial({
@@ -219,24 +268,55 @@ export default class App {
     });
     const floor = new Mesh(geo, material);
     floor.rotateX(-Math.PI / 2);
-    floor.position.y = -19;
+    const modelBounds = new Box3().setFromObject(model);
+    floor.position.y = modelBounds.min.y - 0.05;
     floor.receiveShadow = true;
 
     this.#scene.add(floor);
   }
 
-  #initTorusKnot() {
-    const geo = new TorusKnotGeometry(10, 3, 100, 16);
+  #initTVModel() {
+    const tvAsset = resources.get("tv");
+    if (!tvAsset?.scene) {
+      throw new Error("TV model was not loaded");
+    }
 
-    const material = new MeshStandardMaterial({
-      // wireframe: true,
+    const model = tvAsset.scene;
+    const screenAsset = resources.get("screen");
+
+    if (screenAsset?.scene) {
+      model.add(screenAsset.scene);
+    }
+
+    model.traverse((node) => {
+      if (!node.isMesh) {
+        return;
+      }
+      node.castShadow = true;
+      node.receiveShadow = true;
     });
-    const mesh = new Mesh(geo, material);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    this.#mesh = mesh;
 
-    this.#scene.add(mesh);
+    const box = new Box3().setFromObject(model);
+    const center = new Vector3();
+    box.getCenter(center);
+
+    model.position.sub(center);
+
+    const size = new Vector3();
+    box.getSize(size);
+    const largestDimension = Math.max(size.x, size.y, size.z) || 1;
+    const targetSize = 16;
+    const scaleFactor = targetSize / largestDimension;
+    model.scale.setScalar(scaleFactor);
+
+    const recenteredBox = new Box3().setFromObject(model);
+    const bottomY = recenteredBox.min.y;
+    model.position.y -= bottomY;
+
+    this.#mesh = model;
+    this.#scene.add(model);
+
+    return model;
   }
 
   #resize = () => {
@@ -255,47 +335,46 @@ export default class App {
   };
 
   #initEvents() {
-    window.addEventListener('resize', this.#resize);
+    window.addEventListener("resize", this.#resize);
   }
 
   #removeEvents() {
-    window.removeEventListener('resize', this.#resize);
+    window.removeEventListener("resize", this.#resize);
   }
 
   #initGUI() {
     this.#gui = new GUI({
-      title: 'Scene Controls',
+      title: "Scene Controls",
       width: 320,
     });
 
-    const sceneFolder = this.#gui.addFolder('Scene');
+    const sceneFolder = this.#gui.addFolder("Scene");
     sceneFolder
-      .add(this.#guiState, 'rotateScene')
-      .name('Rotate scene')
+      .add(this.#guiState, "rotateScene")
+      .name("Rotate scene")
       .listen()
       .onChange((value) => {
-        this.#isSceneRotationEnabled = value;
-        this.#syncRotateButton();
+        this.#setPresentationActive(value);
       });
     sceneFolder
-      .add(this.#guiState, 'rotateSpeed', 0.1, 2, 0.05)
-      .name('Rotate speed');
+      .add(this.#guiState, "rotateSpeed", 0.1, 2, 0.05)
+      .name("Rotate speed");
 
-    const ambientFolder = this.#gui.addFolder('Ambient');
+    const ambientFolder = this.#gui.addFolder("Ambient");
     ambientFolder
-      .add(this.#ambientLight, 'intensity', 0, 2, 0.01)
-      .name('Intensity');
+      .add(this.#ambientLight, "intensity", 0, 2, 0.01)
+      .name("Intensity");
 
-    const helpersFolder = this.#gui.addFolder('Helpers');
+    const helpersFolder = this.#gui.addFolder("Helpers");
     helpersFolder
-      .add(this.#guiState, 'showLightHelpers')
-      .name('Directional helper')
+      .add(this.#guiState, "showLightHelpers")
+      .name("Directional helper")
       .onChange((value) => {
         this.#setLightHelpersVisible(value);
       });
     helpersFolder
-      .add(this.#guiState, 'showShadowHelpers')
-      .name('Shadow camera helper')
+      .add(this.#guiState, "showShadowHelpers")
+      .name("Shadow camera helper")
       .onChange((value) => {
         this.#setShadowHelpersVisible(value);
       });
@@ -311,23 +390,23 @@ export default class App {
   }
 
   #initUI() {
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.textContent = 'Rotar escena';
-    button.style.position = 'fixed';
-    button.style.right = '16px';
-    button.style.bottom = '16px';
-    button.style.zIndex = '10';
-    button.style.padding = '10px 14px';
-    button.style.border = '1px solid rgba(255, 255, 255, 0.4)';
-    button.style.borderRadius = '8px';
-    button.style.background = 'rgba(20, 20, 20, 0.8)';
-    button.style.color = '#fff';
-    button.style.fontFamily = 'system-ui, sans-serif';
-    button.style.cursor = 'pointer';
-    button.style.backdropFilter = 'blur(2px)';
-    button.setAttribute('aria-pressed', 'false');
-    button.addEventListener('click', this.#toggleSceneRotation);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Open piece of art";
+    button.style.position = "fixed";
+    button.style.right = "16px";
+    button.style.bottom = "16px";
+    button.style.zIndex = "10";
+    button.style.padding = "10px 14px";
+    button.style.border = "1px solid rgba(255, 255, 255, 0.4)";
+    button.style.borderRadius = "8px";
+    button.style.background = "rgba(20, 20, 20, 0.8)";
+    button.style.color = "#fff";
+    button.style.fontFamily = "system-ui, sans-serif";
+    button.style.cursor = "pointer";
+    button.style.backdropFilter = "blur(2px)";
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", this.#togglePresentation);
 
     document.body.appendChild(button);
     this.#rotateSceneButton = button;
@@ -338,14 +417,16 @@ export default class App {
       return;
     }
 
-    this.#rotateSceneButton.removeEventListener('click', this.#toggleSceneRotation);
+    this.#rotateSceneButton.removeEventListener(
+      "click",
+      this.#togglePresentation,
+    );
     this.#rotateSceneButton.remove();
     this.#rotateSceneButton = null;
   }
 
-  #toggleSceneRotation = () => {
-    this.#isSceneRotationEnabled = !this.#isSceneRotationEnabled;
-    this.#syncRotateButton();
+  #togglePresentation = () => {
+    this.#setPresentationActive(!this.#isSceneRotationEnabled);
   };
 
   #syncRotateButton() {
@@ -356,11 +437,11 @@ export default class App {
     }
 
     this.#rotateSceneButton.textContent = this.#isSceneRotationEnabled
-      ? 'Detener rotación'
-      : 'Rotar escena';
+      ? "Close art"
+      : "Open piece of art";
     this.#rotateSceneButton.setAttribute(
-      'aria-pressed',
-      this.#isSceneRotationEnabled ? 'true' : 'false'
+      "aria-pressed",
+      this.#isSceneRotationEnabled ? "true" : "false",
     );
   }
 
@@ -429,6 +510,8 @@ export default class App {
     this.#controls = null;
     this.#clock = null;
     this.#isSceneRotationEnabled = false;
+    this.#areLightsEnabled = false;
+    this.#lightSnapshot = null;
     this.#ambientLight = null;
     this.#directionalLights = [];
     this.#scene = null;
