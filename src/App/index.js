@@ -258,12 +258,6 @@ export default class App {
     this.#directionalLights.forEach((light, index) => {
       const state = directionalSnapshot[index];
 
-      if (typeof state === "number") {
-        light.intensity = state;
-        light.castShadow = true;
-        return;
-      }
-
       light.intensity =
         typeof state?.intensity === "number" ? state.intensity : light.intensity;
       light.castShadow =
