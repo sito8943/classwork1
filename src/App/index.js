@@ -1,4 +1,5 @@
 import {
+  ACESFilmicToneMapping,
   AmbientLight,
   Box3,
   CameraHelper,
@@ -11,12 +12,17 @@ import {
   PerspectiveCamera,
   PlaneGeometry,
   Scene,
+  Vector2,
   Vector3,
   WebGLRenderer,
   PCFShadowMap,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import Stats from "stats.js";
 import resources from "./Resources";
 
@@ -33,6 +39,10 @@ export default class App {
   #gui;
   #lightHelpers;
   #shadowHelpers;
+  #composer;
+  #renderPass;
+  #bloomPass;
+  #outputPass;
   #guiState;
   #rafId;
   #isDestroyed;
@@ -53,11 +63,20 @@ export default class App {
     this.#gui = null;
     this.#lightHelpers = [];
     this.#shadowHelpers = [];
+    this.#composer = null;
+    this.#renderPass = null;
+    this.#bloomPass = null;
+    this.#outputPass = null;
     this.#guiState = {
       rotateScene: false,
       rotateSpeed: 0.8,
       showLightHelpers: false,
       showShadowHelpers: false,
+      bloomEnabled: true,
+      bloomStrength: 0.04,
+      bloomRadius: 0.26,
+      bloomThreshold: 1,
+      toneMappingExposure: 0.82,
     };
 
     this.#init().catch((error) => {
@@ -83,6 +102,8 @@ export default class App {
 
     this.#renderer.shadowMap.enabled = true;
     this.#renderer.shadowMap.type = PCFShadowMap;
+    this.#renderer.toneMapping = ACESFilmicToneMapping;
+    this.#renderer.toneMappingExposure = this.#guiState.toneMappingExposure;
 
     this.#renderer.setSize(window.innerWidth, window.innerHeight);
 
@@ -101,12 +122,13 @@ export default class App {
     this.#scene = new Scene();
 
     await this.#load();
+    this.#initPostProcessing();
     this.#initUI();
     this.#initGUI();
 
     this.#animate();
     this.#initEvents();
-    this.#setLightsEnabled(false);
+    this.#setPresentationActive(true);
   }
 
   async #load() {
@@ -350,6 +372,28 @@ export default class App {
     return model;
   }
 
+  #initPostProcessing() {
+    const size = new Vector2(window.innerWidth, window.innerHeight);
+
+    this.#composer = new EffectComposer(this.#renderer);
+    this.#composer.setSize(size.x, size.y);
+
+    this.#renderPass = new RenderPass(this.#scene, this.#camera);
+    this.#composer.addPass(this.#renderPass);
+
+    this.#bloomPass = new UnrealBloomPass(
+      size,
+      this.#guiState.bloomStrength,
+      this.#guiState.bloomRadius,
+      this.#guiState.bloomThreshold,
+    );
+    this.#bloomPass.enabled = this.#guiState.bloomEnabled;
+    this.#composer.addPass(this.#bloomPass);
+
+    this.#outputPass = new OutputPass();
+    this.#composer.addPass(this.#outputPass);
+  }
+
   #resize = () => {
     if (this.#isDestroyed) {
       return;
@@ -359,6 +403,7 @@ export default class App {
     const h = window.innerHeight;
 
     this.#renderer.setSize(w, h);
+    this.#composer?.setSize(w, h);
     const aspect = w / h;
 
     this.#camera.aspect = aspect;
@@ -408,6 +453,46 @@ export default class App {
       .name("Shadow camera helper")
       .onChange((value) => {
         this.#setShadowHelpersVisible(value);
+      });
+
+    const postFolder = this.#gui.addFolder("Post FX");
+    postFolder
+      .add(this.#guiState, "bloomEnabled")
+      .name("Bloom enabled")
+      .onChange((value) => {
+        if (this.#bloomPass) {
+          this.#bloomPass.enabled = value;
+        }
+      });
+    postFolder
+      .add(this.#guiState, "bloomStrength", 0, 2, 0.01)
+      .name("Bloom strength")
+      .onChange((value) => {
+        if (this.#bloomPass) {
+          this.#bloomPass.strength = value;
+        }
+      });
+    postFolder
+      .add(this.#guiState, "bloomRadius", 0, 2, 0.01)
+      .name("Bloom radius")
+      .onChange((value) => {
+        if (this.#bloomPass) {
+          this.#bloomPass.radius = value;
+        }
+      });
+    postFolder
+      .add(this.#guiState, "bloomThreshold", 0, 1, 0.01)
+      .name("Bloom threshold")
+      .onChange((value) => {
+        if (this.#bloomPass) {
+          this.#bloomPass.threshold = value;
+        }
+      });
+    postFolder
+      .add(this.#guiState, "toneMappingExposure", 0.4, 2, 0.01)
+      .name("Exposure")
+      .onChange((value) => {
+        this.#renderer.toneMappingExposure = value;
       });
   }
 
@@ -490,7 +575,7 @@ export default class App {
     }
     this.#updateHelpers();
 
-    this.#renderer.render(this.#scene, this.#camera);
+    this.#composer?.render();
     this.#stats.end();
 
     this.#rafId = window.requestAnimationFrame(this.#animate);
@@ -513,6 +598,9 @@ export default class App {
     this.#setShadowHelpersVisible(false);
     this.#removeGUI();
     this.#controls?.dispose();
+    this.#bloomPass?.dispose?.();
+    this.#outputPass?.dispose?.();
+    this.#composer?.dispose?.();
 
     if (this.#scene) {
       this.#scene.traverse((object) => {
@@ -547,6 +635,10 @@ export default class App {
     this.#directionalLights = [];
     this.#scene = null;
     this.#camera = null;
+    this.#composer = null;
+    this.#renderPass = null;
+    this.#bloomPass = null;
+    this.#outputPass = null;
     this.#renderer = null;
     this.#stats = null;
   }
