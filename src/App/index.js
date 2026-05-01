@@ -106,6 +106,7 @@ export default class App {
 
     this.#animate();
     this.#initEvents();
+    this.#setLightsEnabled(false);
   }
 
   async #load() {
@@ -221,7 +222,11 @@ export default class App {
 
   #saveCurrentLightState() {
     this.#lightSnapshot = {
-      directional: this.#directionalLights.map((light) => light.intensity),
+      directional: this.#directionalLights.map((light) => ({
+        intensity: light.intensity,
+        castShadow: light.castShadow,
+      })),
+      ambient: this.#ambientLight?.intensity ?? 0,
     };
   }
 
@@ -237,19 +242,37 @@ export default class App {
     if (!enabled) {
       this.#saveCurrentLightState();
       this.#directionalLights.forEach((light) => {
-        light.intensity *= 0.2;
+        light.intensity = 0;
+        light.castShadow = false;
       });
+      if (this.#ambientLight) {
+        this.#ambientLight.intensity = Math.min(this.#ambientLight.intensity, 0.06);
+      }
+      this.#renderer.shadowMap.needsUpdate = true;
       this.#areLightsEnabled = false;
       return;
     }
 
-    const directionalIntensities = this.#lightSnapshot?.directional ?? [];
+    const directionalSnapshot = this.#lightSnapshot?.directional ?? [];
 
     this.#directionalLights.forEach((light, index) => {
-      const intensity = directionalIntensities[index];
+      const state = directionalSnapshot[index];
+
+      if (typeof state === "number") {
+        light.intensity = state;
+        light.castShadow = true;
+        return;
+      }
+
       light.intensity =
-        typeof intensity === "number" ? intensity : light.intensity;
+        typeof state?.intensity === "number" ? state.intensity : light.intensity;
+      light.castShadow =
+        typeof state?.castShadow === "boolean" ? state.castShadow : light.castShadow;
     });
+    if (this.#ambientLight && typeof this.#lightSnapshot?.ambient === "number") {
+      this.#ambientLight.intensity = this.#lightSnapshot.ambient;
+    }
+    this.#renderer.shadowMap.needsUpdate = true;
     this.#areLightsEnabled = true;
   }
 
