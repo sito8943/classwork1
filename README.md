@@ -5,3 +5,5 @@ Normal State
 Lights turned on
 <img width="1917" height="882" alt="image" src="https://github.com/user-attachments/assets/dfb7ec47-68c4-4a6c-ab87-6667fa7d180e" />
 
+Video Preview
+https://drive.google.com/file/d/1nv5zzQJiLL1Sw6fA04JJyyN6-j4Ku6xO/view?usp=sharing
