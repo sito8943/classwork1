@@ -11,6 +11,8 @@ import {
   MeshStandardMaterial,
   PerspectiveCamera,
   PlaneGeometry,
+  RepeatWrapping,
+  SRGBColorSpace,
   Scene,
   Vector2,
   Vector3,
@@ -355,6 +357,7 @@ export default class App {
 
     if (screenAsset?.scene) {
       model.add(screenAsset.scene);
+      this.#initScreenImage(screenAsset.scene);
     }
 
     model.traverse((node) => {
@@ -386,6 +389,55 @@ export default class App {
     this.#scene.add(model);
 
     return model;
+  }
+
+  #initScreenImage(screenScene) {
+    const texture = resources.get("windows");
+    if (!texture) {
+      return;
+    }
+
+    texture.colorSpace = SRGBColorSpace;
+    texture.flipY = true;
+    texture.wrapS = RepeatWrapping;
+    texture.repeat.set(-1, 1);
+    texture.offset.x = 1;
+    texture.needsUpdate = true;
+
+    screenScene.traverse((node) => {
+      if (!node.isMesh) {
+        return;
+      }
+      if (Array.isArray(node.material)) {
+        node.material.forEach((material) => {
+          this.#setScreenTextureOnMaterial(material, texture);
+        });
+        return;
+      }
+
+      this.#setScreenTextureOnMaterial(node.material, texture);
+    });
+  }
+
+  #setScreenTextureOnMaterial(material, texture) {
+    if (!material) {
+      return;
+    }
+
+    if ("map" in material) {
+      material.map = texture;
+    }
+    if ("emissiveMap" in material) {
+      material.emissiveMap = texture;
+    }
+    if ("emissive" in material) {
+      material.emissive.set(0xffffff);
+    }
+    if ("emissiveIntensity" in material) {
+      material.emissiveIntensity = Math.max(material.emissiveIntensity ?? 1, 1);
+    }
+
+    material.needsUpdate = true;
   }
 
   #initPostProcessing() {
