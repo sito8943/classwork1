@@ -82,6 +82,7 @@ export default class App {
     this.#guiState = {
       rotateScene: false,
       lightsEnabled: true,
+      screenEnabled: true,
       rotateSpeed: 0.8,
       showLightHelpers: false,
       showShadowHelpers: false,
@@ -427,7 +428,7 @@ export default class App {
       this.#rememberScreenMaterialState(node.material);
     });
 
-    this.#setScreenPowered(true);
+    this.#setScreenPowered(this.#guiState.screenEnabled);
   }
 
   #rememberScreenMaterialState(material) {
@@ -452,6 +453,9 @@ export default class App {
   }
 
   #setScreenPowered(enabled) {
+    this.#guiState.screenEnabled = enabled;
+    this.#syncRotateButton();
+
     if (!this.#screenTexture || this.#screenMaterialStates.length === 0) {
       return;
     }
@@ -605,6 +609,13 @@ export default class App {
         this.#setLightsEnabled(value);
       });
     sceneFolder
+      .add(this.#guiState, "screenEnabled")
+      .name("TV screen enabled")
+      .listen()
+      .onChange((value) => {
+        this.#setScreenPowered(value);
+      });
+    sceneFolder
       .add(this.#guiState, "rotateSpeed", 0.1, 2, 0.05)
       .name("Rotate speed");
 
@@ -723,7 +734,9 @@ export default class App {
 
   #togglePresentation = () => {
     const isPresentationInactive =
-      !this.#isSceneRotationEnabled && !this.#areLightsEnabled;
+      !this.#isSceneRotationEnabled &&
+      !this.#areLightsEnabled &&
+      !this.#guiState.screenEnabled;
     this.#setPresentationActive(isPresentationInactive);
   };
 
@@ -735,7 +748,9 @@ export default class App {
     }
 
     const isPresentationInactive =
-      !this.#isSceneRotationEnabled && !this.#areLightsEnabled;
+      !this.#isSceneRotationEnabled &&
+      !this.#areLightsEnabled &&
+      !this.#guiState.screenEnabled;
 
     this.#rotateSceneButton.textContent = isPresentationInactive
       ? "Open piece of art"
