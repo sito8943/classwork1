@@ -303,6 +303,7 @@ export default class App {
       this.#renderer.shadowMap.needsUpdate = true;
       this.#areLightsEnabled = false;
       this.#guiState.lightsEnabled = false;
+      this.#syncRotateButton();
       return;
     }
 
@@ -322,6 +323,7 @@ export default class App {
     this.#renderer.shadowMap.needsUpdate = true;
     this.#areLightsEnabled = true;
     this.#guiState.lightsEnabled = true;
+    this.#syncRotateButton();
   }
 
   #setSceneRotationEnabled(enabled) {
@@ -720,7 +722,9 @@ export default class App {
   }
 
   #togglePresentation = () => {
-    this.#setPresentationActive(!this.#isSceneRotationEnabled);
+    const isPresentationInactive =
+      !this.#isSceneRotationEnabled && !this.#areLightsEnabled;
+    this.#setPresentationActive(isPresentationInactive);
   };
 
   #syncRotateButton() {
@@ -730,12 +734,15 @@ export default class App {
       return;
     }
 
-    this.#rotateSceneButton.textContent = this.#isSceneRotationEnabled
-      ? "Close art"
-      : "Open piece of art";
+    const isPresentationInactive =
+      !this.#isSceneRotationEnabled && !this.#areLightsEnabled;
+
+    this.#rotateSceneButton.textContent = isPresentationInactive
+      ? "Open piece of art"
+      : "Close art";
     this.#rotateSceneButton.setAttribute(
       "aria-pressed",
-      this.#isSceneRotationEnabled ? "true" : "false",
+      isPresentationInactive ? "false" : "true",
     );
   }
 
