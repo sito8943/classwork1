@@ -57,6 +57,8 @@ export default class App {
   #areLightsEnabled;
   #lightSnapshot;
   #rotateSceneButton;
+  #screenTexture;
+  #screenMaterialStates;
 
   constructor() {
     this.#rafId = 0;
@@ -75,6 +77,8 @@ export default class App {
     this.#bloomPass = null;
     this.#fxaaPass = null;
     this.#outputPass = null;
+    this.#screenTexture = null;
+    this.#screenMaterialStates = [];
     this.#guiState = {
       rotateScene: false,
       lightsEnabled: true,
@@ -328,6 +332,7 @@ export default class App {
   #setPresentationActive(active) {
     this.#setSceneRotationEnabled(active);
     this.#setLightsEnabled(active);
+    this.#setScreenPowered(active);
   }
 
   #initMesh() {
@@ -403,6 +408,8 @@ export default class App {
     texture.repeat.set(-1, 1);
     texture.offset.x = 1;
     texture.needsUpdate = true;
+    this.#screenTexture = texture;
+    this.#screenMaterialStates = [];
 
     screenScene.traverse((node) => {
       if (!node.isMesh) {
@@ -410,12 +417,71 @@ export default class App {
       }
       if (Array.isArray(node.material)) {
         node.material.forEach((material) => {
-          this.#setScreenTextureOnMaterial(material, texture);
+          this.#rememberScreenMaterialState(material);
         });
         return;
       }
 
-      this.#setScreenTextureOnMaterial(node.material, texture);
+      this.#rememberScreenMaterialState(node.material);
+    });
+
+    this.#setScreenPowered(true);
+  }
+
+  #rememberScreenMaterialState(material) {
+    if (!material) {
+      return;
+    }
+
+    const isTracked = this.#screenMaterialStates.some(
+      (entry) => entry.material === material,
+    );
+    if (isTracked) {
+      return;
+    }
+
+    this.#screenMaterialStates.push({
+      material,
+      baseColor:
+        "color" in material && material.color?.isColor
+          ? material.color.clone()
+          : null,
+    });
+  }
+
+  #setScreenPowered(enabled) {
+    if (!this.#screenTexture || this.#screenMaterialStates.length === 0) {
+      return;
+    }
+
+    this.#screenMaterialStates.forEach((entry) => {
+      const { material, baseColor } = entry;
+
+      if (enabled) {
+        if (baseColor && "color" in material) {
+          material.color.copy(baseColor);
+        }
+        this.#setScreenTextureOnMaterial(material, this.#screenTexture);
+        return;
+      }
+
+      if ("map" in material) {
+        material.map = null;
+      }
+      if ("emissiveMap" in material) {
+        material.emissiveMap = null;
+      }
+      if ("emissive" in material) {
+        material.emissive.set(0x000000);
+      }
+      if ("emissiveIntensity" in material) {
+        material.emissiveIntensity = 0;
+      }
+      if ("color" in material) {
+        material.color.set(0x050505);
+      }
+
+      material.needsUpdate = true;
     });
   }
 
@@ -753,6 +819,8 @@ export default class App {
     this.#bloomPass = null;
     this.#fxaaPass = null;
     this.#outputPass = null;
+    this.#screenTexture = null;
+    this.#screenMaterialStates = [];
     this.#renderer = null;
     this.#stats = null;
   }
