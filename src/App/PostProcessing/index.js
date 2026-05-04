@@ -63,14 +63,6 @@ export default class PostProcessing {
     const ef = new EffectPass(this.#camera, cae);
     this.#composer.addPass(ef);
 
-    const se = new SepiaEffect();
-    const ep = new EffectPass(this.#camera, se);
-    // this.#composer.addPass(ep);
-
-    const she = new ShockWaveEffect(this.#camera);
-    const shep = new EffectPass(this.#camera, she);
-    // this.#composer.addPass(shep);
-
     this.#bloomEffect = new BloomEffect({
       intensity: bloomStrength,
       radius: bloomRadius,
