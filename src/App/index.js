@@ -14,21 +14,15 @@ import {
   RepeatWrapping,
   SRGBColorSpace,
   Scene,
-  Vector2,
   Vector3,
   WebGLRenderer,
   PCFShadowMap,
 } from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GUI } from "three/addons/libs/lil-gui.module.min.js";
-import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
-import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
-import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
-import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
-import { FXAAShader } from "three/addons/shaders/FXAAShader.js";
 import Stats from "stats.js";
 import resources from "./Resources";
+import PostProcessing from "./PostProcessing";
 
 const MAX_DPR = 2;
 
@@ -46,10 +40,6 @@ export default class App {
   #lightHelpers;
   #shadowHelpers;
   #composer;
-  #renderPass;
-  #bloomPass;
-  #fxaaPass;
-  #outputPass;
   #guiState;
   #rafId;
   #isDestroyed;
@@ -73,10 +63,6 @@ export default class App {
     this.#lightHelpers = [];
     this.#shadowHelpers = [];
     this.#composer = null;
-    this.#renderPass = null;
-    this.#bloomPass = null;
-    this.#fxaaPass = null;
-    this.#outputPass = null;
     this.#screenTexture = null;
     this.#screenMaterialStates = [];
     this.#guiState = {
@@ -130,8 +116,8 @@ export default class App {
 
     this.#camera = new PerspectiveCamera(60, aspect, 0.1, 100);
     this.#camera.position.z = 20;
-    this.#camera.position.y = 20;
-    this.#camera.position.x= 20;
+    this.#camera.position.y = 15;
+    this.#camera.position.x = 30;
 
     this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
     this.#controls.enableDamping = false;
@@ -299,7 +285,10 @@ export default class App {
         light.castShadow = false;
       });
       if (this.#ambientLight) {
-        this.#ambientLight.intensity = Math.min(this.#ambientLight.intensity, 0.06);
+        this.#ambientLight.intensity = Math.min(
+          this.#ambientLight.intensity,
+          0.06,
+        );
       }
       this.#renderer.shadowMap.needsUpdate = true;
       this.#areLightsEnabled = false;
@@ -314,11 +303,18 @@ export default class App {
       const state = directionalSnapshot[index];
 
       light.intensity =
-        typeof state?.intensity === "number" ? state.intensity : light.intensity;
+        typeof state?.intensity === "number"
+          ? state.intensity
+          : light.intensity;
       light.castShadow =
-        typeof state?.castShadow === "boolean" ? state.castShadow : light.castShadow;
+        typeof state?.castShadow === "boolean"
+          ? state.castShadow
+          : light.castShadow;
     });
-    if (this.#ambientLight && typeof this.#lightSnapshot?.ambient === "number") {
+    if (
+      this.#ambientLight &&
+      typeof this.#lightSnapshot?.ambient === "number"
+    ) {
       this.#ambientLight.intensity = this.#lightSnapshot.ambient;
     }
     this.#renderer.shadowMap.needsUpdate = true;
@@ -513,46 +509,20 @@ export default class App {
   }
 
   #initPostProcessing() {
-    const size = new Vector2(window.innerWidth, window.innerHeight);
+    const width = window.innerWidth;
+    const height = window.innerHeight;
 
-    this.#composer = new EffectComposer(this.#renderer);
-    this.#composer.setPixelRatio(this.#getPixelRatio());
-    this.#composer.setSize(size.x, size.y);
-
-    this.#renderPass = new RenderPass(this.#scene, this.#camera);
-    this.#composer.addPass(this.#renderPass);
-
-    this.#bloomPass = new UnrealBloomPass(
-      size,
-      this.#guiState.bloomStrength,
-      this.#guiState.bloomRadius,
-      this.#guiState.bloomThreshold,
-    );
-    this.#bloomPass.enabled = this.#guiState.bloomEnabled;
-    this.#composer.addPass(this.#bloomPass);
-
-    this.#fxaaPass = new ShaderPass(FXAAShader);
-    this.#fxaaPass.enabled = this.#guiState.fxaaEnabled;
-    this.#composer.addPass(this.#fxaaPass);
-    this.#updateFxaaResolution(size.x, size.y, this.#getPixelRatio());
-
-    this.#outputPass = new OutputPass();
-    this.#composer.addPass(this.#outputPass);
-  }
-
-  #updateFxaaResolution(width, height, dpr) {
-    if (!this.#fxaaPass) {
-      return;
-    }
-
-    const resolution = this.#fxaaPass.material?.uniforms?.resolution?.value;
-    if (!resolution) {
-      return;
-    }
-
-    const safeWidth = Math.max(1, width * dpr);
-    const safeHeight = Math.max(1, height * dpr);
-    resolution.set(1 / safeWidth, 1 / safeHeight);
+    this.#composer = new PostProcessing({
+      renderer: this.#renderer,
+      scene: this.#scene,
+      camera: this.#camera,
+      bloomEnabled: this.#guiState.bloomEnabled,
+      fxaaEnabled: this.#guiState.fxaaEnabled,
+      bloomStrength: this.#guiState.bloomStrength,
+      bloomRadius: this.#guiState.bloomRadius,
+      bloomThreshold: this.#guiState.bloomThreshold,
+    });
+    this.#composer.resize(width, height);
   }
 
   #getPixelRatio() {
@@ -570,9 +540,7 @@ export default class App {
 
     this.#renderer.setPixelRatio(dpr);
     this.#renderer.setSize(w, h);
-    this.#composer?.setPixelRatio(dpr);
-    this.#composer?.setSize(w, h);
-    this.#updateFxaaResolution(w, h, dpr);
+    this.#composer.resize(w, h);
     const aspect = w / h;
 
     this.#camera.aspect = aspect;
@@ -643,41 +611,31 @@ export default class App {
       .add(this.#guiState, "bloomEnabled")
       .name("Bloom enabled")
       .onChange((value) => {
-        if (this.#bloomPass) {
-          this.#bloomPass.enabled = value;
-        }
+        this.#composer?.setBloomEnabled(value);
       });
     postFolder
       .add(this.#guiState, "fxaaEnabled")
       .name("FXAA enabled")
       .onChange((value) => {
-        if (this.#fxaaPass) {
-          this.#fxaaPass.enabled = value;
-        }
+        this.#composer?.setFXAAEnabled(value);
       });
     postFolder
       .add(this.#guiState, "bloomStrength", 0, 2, 0.01)
       .name("Bloom strength")
       .onChange((value) => {
-        if (this.#bloomPass) {
-          this.#bloomPass.strength = value;
-        }
+        this.#composer?.setBloomStrength(value);
       });
     postFolder
       .add(this.#guiState, "bloomRadius", 0, 2, 0.01)
       .name("Bloom radius")
       .onChange((value) => {
-        if (this.#bloomPass) {
-          this.#bloomPass.radius = value;
-        }
+        this.#composer?.setBloomRadius(value);
       });
     postFolder
       .add(this.#guiState, "bloomThreshold", 0, 1, 0.01)
       .name("Bloom threshold")
       .onChange((value) => {
-        if (this.#bloomPass) {
-          this.#bloomPass.threshold = value;
-        }
+        this.#composer?.setBloomThreshold(value);
       });
     postFolder
       .add(this.#guiState, "toneMappingExposure", 0.4, 2, 0.01)
@@ -798,10 +756,7 @@ export default class App {
     this.#setShadowHelpersVisible(false);
     this.#removeGUI();
     this.#controls?.dispose();
-    this.#bloomPass?.dispose?.();
-    this.#fxaaPass?.dispose?.();
-    this.#outputPass?.dispose?.();
-    this.#composer?.dispose?.();
+    this.#composer?.dispose();
 
     if (this.#scene) {
       this.#scene.traverse((object) => {
@@ -837,10 +792,6 @@ export default class App {
     this.#scene = null;
     this.#camera = null;
     this.#composer = null;
-    this.#renderPass = null;
-    this.#bloomPass = null;
-    this.#fxaaPass = null;
-    this.#outputPass = null;
     this.#screenTexture = null;
     this.#screenMaterialStates = [];
     this.#renderer = null;
