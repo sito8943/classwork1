@@ -24,7 +24,7 @@ import Stats from "stats.js";
 import resources from "./Resources";
 import PostProcessing from "./PostProcessing";
 
-const MAX_DPR = 2;
+const MAX_DPR = 1.5;
 
 export default class App {
   #renderer;
@@ -76,7 +76,7 @@ export default class App {
       fxaaEnabled: true,
       bloomStrength: 0.04,
       bloomRadius: 0.26,
-      bloomThreshold: 1,
+      bloomThreshold: 0.75,
       toneMappingExposure: 0.82,
     };
 
@@ -167,21 +167,21 @@ export default class App {
       color: "#ffe7c2",
       intensity: 2.1,
       position: [24, 33, 18],
-      shadowSize: 2048,
+      shadowSize: 1024,
       shadowBias: -0.00015,
     });
     const fill = this.#createDirectionalLight({
       color: "#c9dcff",
       intensity: 0.95,
       position: [-26, 33, 10],
-      shadowSize: 1024,
+      shadowSize: 512,
       shadowBias: -0.0001,
     });
     const rim = this.#createDirectionalLight({
       color: "#ffffff",
       intensity: 0.8,
       position: [0, 33, -28],
-      shadowSize: 1024,
+      shadowSize: 512,
       shadowBias: -0.0001,
     });
 
@@ -202,11 +202,11 @@ export default class App {
     light.castShadow = true;
     light.shadow.mapSize.set(shadowSize, shadowSize);
     light.shadow.camera.near = 0.5;
-    light.shadow.camera.far = 120;
-    light.shadow.camera.left = -35;
-    light.shadow.camera.right = 35;
-    light.shadow.camera.top = 35;
-    light.shadow.camera.bottom = -35;
+    light.shadow.camera.far = 70;
+    light.shadow.camera.left = -18;
+    light.shadow.camera.right = 18;
+    light.shadow.camera.top = 18;
+    light.shadow.camera.bottom = -18;
     light.shadow.bias = shadowBias;
 
     this.#scene.add(light);
